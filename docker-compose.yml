@@ -1,0 +1,13 @@
+version: '3.7'
+services:
+  leihpilot:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:8000"
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    mem_limit: 256m
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
