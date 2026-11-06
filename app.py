@@ -12,6 +12,17 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError
 from contextvars import ContextVar
 CSRF_CONTEXT=ContextVar("csrf",default="")
+# Reject oversized requests before parsing form data. Scanner requests are tiny;
+# CSV import is limited separately to 300 KB of UTF-8 text.
+MAX_REQUEST_BYTES=1024*1024
+
+def csv_safe_cell(value):
+ """Prevent spreadsheet formula interpretation (including leading whitespace)."""
+ text='' if value is None else str(value)
+ if text.lstrip('\t\r\n ').startswith(('=', '+', '-', '@')):
+  return "'"+text
+ return text
+
 
 ROOT=Path('/data'); ROOT.mkdir(exist_ok=True)
 DB=ROOT/'leihpilot.db'
@@ -73,6 +84,17 @@ def auth_page(title,content):
 @app.middleware('http')
 async def security_middleware(request:Request,call_next):
  path=request.url.path
+ if request.method in ('POST','PUT','PATCH','DELETE'):
+  length=request.headers.get('content-length')
+  if length is not None:
+   try:
+    if int(length)>MAX_REQUEST_BYTES:return HTMLResponse('Anfrage zu groß.',status_code=413)
+   except ValueError:
+    return HTMLResponse('Ungültige Anfragegröße.',status_code=400)
+  # Also enforce the limit for chunked requests without Content-Length.
+  # Starlette caches the body for downstream form parsing.
+  received=await request.body()
+  if len(received)>MAX_REQUEST_BYTES:return HTMLResponse('Anfrage zu groß.',status_code=413)
  public=path in ('/login','/setup','/health')
  session=session_for(request)
  ctx=CSRF_CONTEXT.set(session['csrf'] if session else '')
@@ -195,7 +217,7 @@ def page(title,body,active=''):
  links=[('/privacy','Datenschutz'),('/','Dashboard'),('/devices','Geräte'),('/classes','Klassen'),('/students','Schüler'),('/scan','Scan-Ausleihe'),('/class-issue','Klassenausleihe'),('/loans','Ausleihen'),('/contracts','Verträge'),('/settings','Schule'),('/account','Passwort')]
  nav=''.join(f'<a class="{"active" if active==path else ""}" href="{path}">{name}</a>' for path,name in links)
  body=re.sub(r'(<form\b[^>]*method=[\"\']?post[\"\']?[^>]*>)',lambda m:m.group(1)+'<input type="hidden" name="_csrf" value="'+esc(CSRF_CONTEXT.get())+'">',body,flags=re.I)
- return HTMLResponse(f'<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · relay.</title>{STYLE}</head><body><header><h1>relay<span class="brand-dot">.</span></h1><div class="school">{esc(school)}<br>Geräteverwaltung · Pilot</div><nav>{nav}<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{esc(CSRF_CONTEXT.get())}"><button class="secondary">Abmelden</button></form></nav></header><main><div class="notice"><b>TESTSYSTEM</b> · Keine echten Schülerdaten eingeben. Zugang geschützt; weiterhin ausschließlich fiktive Daten verwenden.</div><div class="top"><h2>{esc(title)}</h2><span class="sub">relay. v0.11</span></div>{body}</main><script>function filterTable(id,q){{document.querySelectorAll("#"+id+" tbody tr").forEach(r=>r.style.display=r.textContent.toLowerCase().includes(q.toLowerCase())?"":"none")}}</script></body></html>')
+ return HTMLResponse(f'<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · relay.</title>{STYLE}</head><body><header><h1>relay<span class="brand-dot">.</span></h1><div class="school">{esc(school)}<br>Geräteverwaltung · Pilot</div><nav>{nav}<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{esc(CSRF_CONTEXT.get())}"><button class="secondary">Abmelden</button></form></nav></header><main><div class="notice"><b>TESTSYSTEM</b> · Keine echten Schülerdaten eingeben. Zugang geschützt; weiterhin ausschließlich fiktive Daten verwenden.</div><div class="top"><h2>{esc(title)}</h2><span class="sub">relay. v0.11.1</span></div>{body}</main><script>function filterTable(id,q){{document.querySelectorAll("#"+id+" tbody tr").forEach(r=>r.style.display=r.textContent.toLowerCase().includes(q.toLowerCase())?"":"none")}}</script></body></html>')
 def esc(x):
  import html
  return html.escape(str(x or ''))
@@ -261,7 +283,7 @@ def export_devices():
  writer.writerow(['Inventarnummer','Seriennummer','Modell','Zustand','Notizen','Gerätestatus'])
  with conn() as c:
   for r in c.execute('SELECT inventory,serial,model,condition,notes,operational_state FROM devices ORDER BY inventory'):
-   writer.writerow([("'"+str(v) if str(v).startswith(('=','+','-','@')) else v) for v in r])
+   writer.writerow([csv_safe_cell(v) for v in r])
  return Response(content='\ufeff'+output.getvalue(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="relay-geraete.csv"'})
 
 @app.get('/devices/import')

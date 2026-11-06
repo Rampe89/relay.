@@ -1,6 +1,6 @@
 # relay.
 
-**Geräteverwaltung und Ausleihe für Schulen – Version 0.11 (Testprojekt)**
+**Geräteverwaltung und Ausleihe für Schulen – Version 0.11.1 (Testprojekt)**
 
 relay. ist eine lokal betreibbare Webanwendung für die Verwaltung von Schulgeräten, Schülerinnen und Schülern sowie Ausleihen. Der bisherige interne Projekt- und Docker-Service-Name `leihpilot` bleibt aus Kompatibilitätsgründen erhalten.
 
@@ -108,3 +108,13 @@ backups/                Backup-Dateien (nicht in Git)
 ## Lizenz
 
 Derzeit **keine Open-Source-Lizenz** hinterlegt. Der Quellcode ist damit nicht automatisch zur Weiterverwendung lizenziert. Vor einer öffentlichen Freigabe eine passende Lizenz auswählen und eine `LICENSE`-Datei ergänzen.
+
+## Sicherheitsupdate v0.11.1
+
+- CSV-Export schützt auch bei vorangestellten Leerzeichen/Steuerzeichen vor Tabellenformeln.
+- Schreibanfragen sind serverseitig auf 1 MiB begrenzt.
+- Automatisierte Regressionstests für den CSV-Export.
+- Der Docker-Container läuft aus Kompatibilitätsgründen weiterhin als Root im Container; die Umstellung auf einen unprivilegierten Benutzer benötigt eine separate, getestete Migration der bestehenden Datenverzeichnisse.
+- Login-Drosselung und CSP sind noch nicht vollständig überarbeitet. Siehe [SECURITY.md](SECURITY.md).
+
+**Nicht direkt produktiv deployen:** Erst Tests in separater Umgebung, Backup und anschließende manuelle Funktionsprüfung.
